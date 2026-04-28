@@ -1,5 +1,6 @@
 import streamlit as st
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import pandas as pd
 import numpy as np
 import yfinance as yf
@@ -14,50 +15,66 @@ st.markdown("""
 .block-container { padding-top: 1.5rem; }
 .stButton > button {
     background: #3949ab; color: white; border: none;
-    padding: .6rem 2rem; border-radius: 8px; font-size: 1rem; font-weight: 600;
-}
-.stButton > button:hover { background: #5c6bc0; }
-</style>
-""", unsafe_allow_html=True)
+        padding: .6rem 2rem; border-radius: 8px; font-size: 1rem; font-weight: 600;
+        }
+        .stButton > button:hover { background: #5c6bc0; }
+        </style>
+        """, unsafe_allow_html=True)
 
 def get_label(score):
-    if score <= 25:   return ("Extreme Fear", "#c62828")
-    elif score <= 45: return ("Fear", "#ef6c00")
-    elif score <= 55: return ("Neutral", "#f9a825")
-    elif score <= 75: return ("Greed", "#558b2f")
-    else:             return ("Extreme Greed", "#1b5e20")
+        if score <= 25: return ("Extreme Fear", "#c62828")
+elif score <= 45: return ("Fear", "#ef6c00")
+elif score <= 55: return ("Neutral", "#f9a825")
+elif score <= 75: return ("Greed", "#558b2f")
+else: return ("Extreme Greed", "#1b5e20")
 
 def normalize(series, lookback, invert=False):
-    clean = series.dropna()
-    if len(clean) < 20:
-        return 50.0
-    window = clean.iloc[-lookback:]
+        clean = series.dropna()
+        if len(clean) < 20:
+                    return 50.0
+                window = clean.iloc[-lookback:]
     current = float(clean.iloc[-1])
     score = float((window < current).sum() / len(window) * 100)
     result = 100.0 - score if invert else score
     return round(max(0.0, min(100.0, result)), 1)
 
+def normalize_series(series, lookback, invert=False):
+        """Compute rolling normalized score for each point in the series."""
+    clean = series.dropna()
+    if len(clean) < 20:
+                return pd.Series(dtype=float)
+            result = []
+    dates = []
+    for i in range(lookback, len(clean)):
+                window = clean.iloc[i-lookback:i]
+                current = float(clean.iloc[i])
+                score = float((window < current).sum() / len(window) * 100)
+                val = 100.0 - score if invert else score
+                result.append(round(max(0.0, min(100.0, val)), 1))
+                dates.append(clean.index[i])
+            return pd.Series(result, index=dates)
+
 @st.cache_data(ttl=600, show_spinner=False)
 def get_yf(ticker):
-    try:
-        data = yf.download(ticker, period="2y", progress=False, auto_adjust=True)
-        col = "Close"
-        if col not in data.columns:
-            col = data.columns[0]
-        s = data[col].dropna()
+        try:
+                    data = yf.download(ticker, period="2y", progress=False, auto_adjust=True)
+                    col = "Close"
+                    if col not in data.columns:
+                                    col = data.columns[0]
+                                s = data[col].dropna()
         if isinstance(s, pd.DataFrame):
-            s = s.iloc[:, 0]
-        return s
-    except Exception:
+                        s = s.iloc[:, 0]
+                    return s
+except Exception:
         return pd.Series(dtype=float)
 
 @st.cache_data(ttl=600, show_spinner=False)
 def get_fred(series_id):
-    try:
-        start = (pd.Timestamp.today() - pd.DateOffset(years=3)).date()
+        try:
+                    start = (pd.Timestamp.today() - pd.DateOffset(years=3)).date()
         url = (f"https://api.stlouisfed.org/fred/series/observations"
-               f"?series_id={series_id}&api_key={FRED_API_KEY}"
-               f"&file_type=json&observation_start={start}")
+                              f"?series_id={series_id}&api_key={FRED_API_KEY}"
+                              f"&file_type=json&observation_start={start}")
         r = requests.get(url, timeout=15)
         r.raise_for_status()
         obs = r.json().get("observations", [])
@@ -65,122 +82,299 @@ def get_fred(series_id):
         df["value"] = pd.to_numeric(df["value"], errors="coerce")
         df.index = pd.to_datetime(df["date"])
         return df["value"].dropna()
-    except Exception:
+except Exception:
         return pd.Series(dtype=float)
 
 def compute(cfg):
-    lb = cfg["lookback"]
+        lb = cfg["lookback"]
     prices = get_yf(cfg["index"])
-    vix    = get_yf(cfg["volatility"])
-    bond   = get_yf(cfg["bond_yield"])
-    hy     = get_fred(cfg["hy_spread"])
+    vix = get_yf(cfg["volatility"])
+    bond = get_yf(cfg["bond_yield"])
+    hy = get_fred(cfg["hy_spread"])
 
     if len(prices) < 30:
-        dummy = {k: 50.0 for k in ["Momentum","Strength (RSI)","Breadth","Junk Bond","Volatility","Safe Haven"]}
+                dummy = {k: 50.0 for k in ["Momentum","Strength (RSI)","Breadth","Junk Bond","Volatility","Safe Haven"]}
         return {"score": 50.0, "label": "Neutral", "color": "#f9a825",
-                "components": dummy, "name": cfg["name"], "flag": cfg["flag"]}
+                                "components": dummy, "name": cfg["name"], "flag": cfg["flag"],
+                                "series": {}, "prices": prices}
 
     ma = prices.rolling(cfg["ma_period"]).mean()
     momentum = (prices / ma - 1) * 100
 
     delta = prices.diff()
-    gain  = delta.clip(lower=0).rolling(14).mean()
-    loss  = (-delta.clip(upper=0)).rolling(14).mean()
-    rsi   = 100 - (100 / (1 + gain / (loss + 1e-9)))
+    gain = delta.clip(lower=0).rolling(14).mean()
+    loss = (-delta.clip(upper=0)).rolling(14).mean()
+    rsi = 100 - (100 / (1 + gain / (loss + 1e-9)))
 
-    up      = (prices.diff() > 0).rolling(20).sum()
-    down    = (prices.diff() < 0).rolling(20).sum()
+    up = (prices.diff() > 0).rolling(20).sum()
+    down = (prices.diff() < 0).rolling(20).sum()
     breadth = (up / (down + 1)) * 50
 
-    eq_ret  = prices.pct_change(20) * 100
+    eq_ret = prices.pct_change(20) * 100
     if len(bond) > 20:
-        bd_chg  = bond.reindex(eq_ret.index, method="ffill").diff(20)
-        safehav = eq_ret - bd_chg
-    else:
+                bd_chg = bond.reindex(eq_ret.index, method="ffill").diff(20)
+                safehav = eq_ret - bd_chg
+else:
         safehav = eq_ret
 
     components = {
-        "Momentum":       normalize(momentum, lb),
-        "Strength (RSI)": normalize(rsi,      lb),
-        "Breadth":        normalize(breadth,  lb),
-        "Junk Bond":      normalize(hy,       lb, invert=True) if len(hy) > 0 else 50.0,
-        "Volatility":     normalize(vix,      lb, invert=True) if len(vix) > 0 else 50.0,
-        "Safe Haven":     normalize(safehav,  lb),
+                "Momentum": normalize(momentum, lb),
+                "Strength (RSI)": normalize(rsi, lb),
+                "Breadth": normalize(breadth, lb),
+                "Junk Bond": normalize(hy, lb, invert=True) if len(hy) > 0 else 50.0,
+                "Volatility": normalize(vix, lb, invert=True) if len(vix) > 0 else 50.0,
+                "Safe Haven": normalize(safehav, lb),
     }
+
+    # Compute historical series for each component (last 252 trading days)
+    hist_lb = min(lb, 252)
+    series = {
+                "Momentum": normalize_series(momentum, hist_lb),
+                "Strength (RSI)": normalize_series(rsi, hist_lb),
+                "Breadth": normalize_series(breadth, hist_lb),
+                "Junk Bond": normalize_series(hy.reindex(momentum.index, method="ffill").dropna(), hist_lb, invert=True) if len(hy) > 20 else pd.Series(dtype=float),
+                "Volatility": normalize_series(vix.reindex(momentum.index, method="ffill").dropna(), hist_lb, invert=True) if len(vix) > 20 else pd.Series(dtype=float),
+                "Safe Haven": normalize_series(safehav, hist_lb),
+    }
+
+    # Compute rolling Fear & Greed Index (average of all 6 components)
+    valid_series = [s for s in series.values() if len(s) > 0]
+    if valid_series:
+                combined = pd.concat(valid_series, axis=1).dropna()
+                fg_history = combined.mean(axis=1).round(1)
+else:
+        fg_history = pd.Series(dtype=float)
+
     total = round(sum(components.values()) / len(components), 1)
     lbl, color = get_label(total)
     return {"score": total, "label": lbl, "color": color,
-            "components": components, "name": cfg["name"], "flag": cfg["flag"]}
+                        "components": components, "name": cfg["name"], "flag": cfg["flag"],
+                        "series": series, "fg_history": fg_history, "prices": prices}
 
 def make_gauge(result):
-    score = result["score"]
+        score = result["score"]
     color = result["color"]
-    lbl   = result["label"]
+    lbl = result["label"]
     fig = go.Figure(go.Indicator(
-        mode="gauge+number",
-        value=score,
-        number={"font": {"size": 60, "color": color}},
-        title={"text": f"{result['flag']} {result['name']}<br><span style='font-size:1.2em;color:{color}'>{lbl}</span>",
-               "font": {"size": 15}},
-        gauge={
-            "axis": {"range": [0, 100], "tickvals": [0,25,45,55,75,100], "tickfont": {"size":10}},
-            "bar": {"color": color, "thickness": 0.22},
-            "bgcolor": "#1e2130", "borderwidth": 0,
-            "steps": [
-                {"range": [0,  25],  "color": "#3b0000"},
-                {"range": [25, 45],  "color": "#3b1a00"},
-                {"range": [45, 55],  "color": "#3b3000"},
-                {"range": [55, 75],  "color": "#153000"},
-                {"range": [75, 100], "color": "#001a00"},
-            ],
-            "threshold": {"line": {"color": "white", "width": 3},
-                          "thickness": 0.75, "value": score},
-        }
+                mode="gauge+number",
+                value=score,
+                number={"font": {"size": 60, "color": color}},
+                title={"text": f"{result['flag']} {result['name']}<br><span style='font-size:1.2em;color:{color}'>{lbl}</span>",
+                                      "font": {"size": 15}},
+                gauge={
+                                "axis": {"range": [0, 100], "tickvals": [0,25,45,55,75,100], "tickfont": {"size":10}},
+                                "bar": {"color": color, "thickness": 0.22},
+                                "bgcolor": "#1e2130", "borderwidth": 0,
+                                "steps": [
+                                                    {"range": [0, 25], "color": "#3b0000"},
+                                                    {"range": [25, 45], "color": "#3b1a00"},
+                                                    {"range": [45, 55], "color": "#3b3000"},
+                                                    {"range": [55, 75], "color": "#153000"},
+                                                    {"range": [75, 100], "color": "#001a00"},
+                                ],
+                                "threshold": {"line": {"color": "white", "width": 3},
+                                                                        "thickness": 0.75, "value": score},
+                }
     ))
     fig.update_layout(height=290, margin=dict(l=20,r=20,t=70,b=10),
-                      paper_bgcolor="#0e1117", font_color="white")
+                                            paper_bgcolor="#0e1117", font_color="white")
     return fig
 
 def make_bars(result):
-    names  = list(result["components"].keys())
+        names = list(result["components"].keys())
     values = list(result["components"].values())
     colors = [get_label(v)[1] for v in values]
     fig = go.Figure(go.Bar(
-        x=values, y=names, orientation="h",
-        marker_color=colors,
-        text=[f"{v:.0f}" for v in values],
-        textposition="outside"
+                x=values, y=names, orientation="h",
+                marker_color=colors,
+                text=[f"{v:.0f}" for v in values],
+                textposition="outside"
     ))
     fig.add_vline(x=50, line_dash="dash", line_color="#555", line_width=1)
     fig.update_layout(
-        xaxis=dict(range=[0,118], showgrid=False, zeroline=False),
-        yaxis=dict(autorange="reversed"),
-        height=260, margin=dict(l=10,r=50,t=15,b=15),
-        paper_bgcolor="#0e1117", plot_bgcolor="#1e2130", font_color="white"
+                xaxis=dict(range=[0,118], showgrid=False, zeroline=False),
+                yaxis=dict(autorange="reversed"),
+                height=260, margin=dict(l=10,r=50,t=15,b=15),
+                paper_bgcolor="#0e1117", plot_bgcolor="#1e2130", font_color="white"
     )
     return fig
 
 def make_radar(result):
-    cats = list(result["components"].keys())
+        cats = list(result["components"].keys())
     vals = list(result["components"].values())
     cats_c = cats + [cats[0]]
     vals_c = vals + [vals[0]]
     color = result["color"]
     fig = go.Figure(go.Scatterpolar(
-        r=vals_c, theta=cats_c, fill="toself",
-        fillcolor="rgba(100,100,100,0.15)",
-        line=dict(color=color, width=2)
+                r=vals_c, theta=cats_c, fill="toself",
+                fillcolor="rgba(100,100,100,0.15)",
+                line=dict(color=color, width=2)
     ))
     fig.update_layout(
-        polar=dict(
-            bgcolor="#1e2130",
-            radialaxis=dict(range=[0,100], tickfont=dict(size=9), gridcolor="#444"),
-            angularaxis=dict(tickfont=dict(size=10), gridcolor="#444")
-        ),
-        showlegend=False, height=300,
-        margin=dict(l=50,r=50,t=20,b=20),
-        paper_bgcolor="#0e1117", font_color="white"
+                polar=dict(
+                                bgcolor="#1e2130",
+                                radialaxis=dict(range=[0,100], tickfont=dict(size=9), gridcolor="#444"),
+                                angularaxis=dict(tickfont=dict(size=10), gridcolor="#444")
+                ),
+                showlegend=False, height=300,
+                margin=dict(l=50,r=50,t=20,b=20),
+                paper_bgcolor="#0e1117", font_color="white"
     )
+    return fig
+
+def make_component_history(result):
+        """Create a subplot with the historical evolution of each indicator."""
+    series = result["series"]
+    comp_names = list(series.keys())
+    valid = [(name, s) for name, s in series.items() if len(s) > 0]
+    if not valid:
+                return None
+
+    n = len(valid)
+    cols = 2
+    rows = (n + 1) // cols
+
+    fig = make_subplots(
+                rows=rows, cols=cols,
+                subplot_titles=[name for name, _ in valid],
+                vertical_spacing=0.12,
+                horizontal_spacing=0.08
+    )
+
+    for idx, (name, s) in enumerate(valid):
+                row = idx // cols + 1
+                col = idx % cols + 1
+                # Last 252 trading days
+                s_plot = s.iloc[-252:] if len(s) > 252 else s
+        colors_line = [get_label(v)[1] for v in s_plot.values]
+        # Use a single scatter with color gradient approximation
+        score_color = get_label(float(s_plot.iloc[-1]))[1] if len(s_plot) > 0 else "#f9a825"
+        fig.add_trace(
+                        go.Scatter(
+                                            x=s_plot.index,
+                                            y=s_plot.values,
+                                            mode="lines",
+                                            line=dict(color=score_color, width=1.5),
+                                            fill="tozeroy",
+                                            fillcolor=score_color.replace(")", ", 0.15)").replace("rgb", "rgba") if "rgb" in score_color else score_color + "26",
+                                            name=name,
+                                            showlegend=False,
+                                            hovertemplate="%{x|%d/%m/%Y}<br>" + name + ": %{y:.0f}<extra></extra>"
+                        ),
+                        row=row, col=col
+        )
+        # Add reference line at 50
+        fig.add_hline(y=50, line_dash="dash", line_color="#555", line_width=1, row=row, col=col)
+        fig.update_yaxes(range=[0, 100], row=row, col=col)
+
+    fig.update_layout(
+                height=120 * rows + 60,
+                margin=dict(l=10, r=10, t=40, b=10),
+                paper_bgcolor="#0e1117",
+                plot_bgcolor="#1e2130",
+                font_color="white",
+                font_size=11
+    )
+    fig.update_xaxes(showgrid=False)
+    fig.update_yaxes(gridcolor="#333")
+    return fig
+
+def make_fg_vs_index(r1, r2):
+        """Create chart comparing F&G index history vs S&P 500 and Euro Stoxx."""
+    fg1 = r1.get("fg_history", pd.Series(dtype=float))
+    fg2 = r2.get("fg_history", pd.Series(dtype=float))
+    prices1 = r1.get("prices", pd.Series(dtype=float))
+    prices2 = r2.get("prices", pd.Series(dtype=float))
+
+    if len(fg1) == 0 and len(fg2) == 0:
+                return None
+
+    fig = make_subplots(
+                rows=2, cols=1,
+                shared_xaxes=True,
+                subplot_titles=[
+                                "Fear & Greed Index - Evolucion historica",
+                                "Indices bursatiles - Precio normalizado (base 100)"
+                ],
+                vertical_spacing=0.08,
+                specs=[[{"secondary_y": False}], [{"secondary_y": False}]]
+    )
+
+    # --- Top panel: F&G history ---
+    if len(fg1) > 0:
+                fg1_plot = fg1.iloc[-252:] if len(fg1) > 252 else fg1
+                fig.add_trace(go.Scatter(
+                    x=fg1_plot.index, y=fg1_plot.values,
+                    mode="lines", name=f"F&G {r1['flag']} (S&P 500)",
+                    line=dict(color="#4fc3f7", width=2),
+                    hovertemplate="%{x|%d/%m/%Y}<br>F&G US: %{y:.0f}<extra></extra>"
+                ), row=1, col=1)
+
+    if len(fg2) > 0:
+                fg2_plot = fg2.iloc[-252:] if len(fg2) > 252 else fg2
+                fig.add_trace(go.Scatter(
+                    x=fg2_plot.index, y=fg2_plot.values,
+                    mode="lines", name=f"F&G {r2['flag']} (EuroStoxx)",
+                    line=dict(color="#ffb74d", width=2),
+                    hovertemplate="%{x|%d/%m/%Y}<br>F&G EU: %{y:.0f}<extra></extra>"
+                ), row=1, col=1)
+
+    # Add zones on top panel
+    fig.add_hrect(y0=0, y1=25, fillcolor="#c62828", opacity=0.08, line_width=0, row=1, col=1)
+    fig.add_hrect(y0=25, y1=45, fillcolor="#ef6c00", opacity=0.08, line_width=0, row=1, col=1)
+    fig.add_hrect(y0=45, y1=55, fillcolor="#f9a825", opacity=0.08, line_width=0, row=1, col=1)
+    fig.add_hrect(y0=55, y1=75, fillcolor="#558b2f", opacity=0.08, line_width=0, row=1, col=1)
+    fig.add_hrect(y0=75, y1=100, fillcolor="#1b5e20", opacity=0.08, line_width=0, row=1, col=1)
+    fig.add_hline(y=50, line_dash="dash", line_color="#555", line_width=1, row=1, col=1)
+
+    # --- Bottom panel: index prices normalized to 100 ---
+    if len(prices1) > 0:
+                p1 = prices1.iloc[-252:] if len(prices1) > 252 else prices1
+                p1_norm = (p1 / p1.iloc[0] * 100).round(2)
+                fig.add_trace(go.Scatter(
+                    x=p1_norm.index, y=p1_norm.values,
+                    mode="lines", name="S&P 500",
+                    line=dict(color="#4fc3f7", width=2, dash="solid"),
+                    hovertemplate="%{x|%d/%m/%Y}<br>S&P 500: %{y:.1f}<extra></extra>"
+                ), row=2, col=1)
+
+    if len(prices2) > 0:
+                p2 = prices2.iloc[-252:] if len(prices2) > 252 else prices2
+                # Align to same start date as p1 if possible
+                if len(prices1) > 0:
+                                start_date = max(p1_norm.index[0], p2.index[0])
+                                p2 = p2[p2.index >= start_date]
+                                if len(p2) > 0:
+                                                    p2_norm = (p2 / p2.iloc[0] * 100).round(2)
+                                                    fig.add_trace(go.Scatter(
+                                                        x=p2_norm.index, y=p2_norm.values,
+                                                        mode="lines", name="EuroStoxx 50",
+                                                        line=dict(color="#ffb74d", width=2, dash="solid"),
+                                                        hovertemplate="%{x|%d/%m/%Y}<br>EuroStoxx 50: %{y:.1f}<extra></extra>"
+                                                    ), row=2, col=1)
+                else:
+            p2_norm = (p2 / p2.iloc[0] * 100).round(2)
+                                fig.add_trace(go.Scatter(
+                                                    x=p2_norm.index, y=p2_norm.values,
+                                                    mode="lines", name="EuroStoxx 50",
+                                                    line=dict(color="#ffb74d", width=2, dash="solid"),
+                                                    hovertemplate="%{x|%d/%m/%Y}<br>EuroStoxx 50: %{y:.1f}<extra></extra>"
+                                ), row=2, col=1)
+
+    fig.add_hline(y=100, line_dash="dash", line_color="#555", line_width=1, row=2, col=1)
+
+    fig.update_layout(
+                height=500,
+                margin=dict(l=10, r=10, t=50, b=10),
+                paper_bgcolor="#0e1117",
+                plot_bgcolor="#1e2130",
+                font_color="white",
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                hovermode="x unified"
+    )
+    fig.update_yaxes(range=[0, 100], row=1, col=1, gridcolor="#333", title_text="F&G Score")
+    fig.update_yaxes(gridcolor="#333", row=2, col=1, title_text="Precio (base 100)")
+    fig.update_xaxes(showgrid=False, gridcolor="#333")
     return fig
 
 # ── UI ────────────────────────────────────────────────────────────────────────
@@ -189,20 +383,20 @@ st.caption("S&P 500 (USA) vs EuroStoxx 50 (Europa) - Inspirado en CNN Money")
 
 col_btn, col_ts = st.columns([1, 3])
 with col_btn:
-    refresh = st.button("Actualizar datos")
+        refresh = st.button("Actualizar datos")
 with col_ts:
-    st.markdown(
-        f"<small style='color:#888'>Actualizado: {datetime.now().strftime('%d/%m/%Y %H:%M')}</small>",
-        unsafe_allow_html=True
-    )
+        st.markdown(
+            f"<small style='color:#888'>Actualizado: {datetime.now().strftime('%d/%m/%Y %H:%M')}</small>",
+            unsafe_allow_html=True
+)
 
 if refresh:
-    st.cache_data.clear()
+        st.cache_data.clear()
 
 with st.spinner("Descargando datos de mercado..."):
-    results = {}
+        results = {}
     for key, cfg in CONFIGS.items():
-        results[key] = compute(cfg)
+                results[key] = compute(cfg)
 
 keys = list(results.keys())
 r1 = results[keys[0]]
@@ -210,44 +404,75 @@ r2 = results[keys[1]]
 
 c1, c2 = st.columns(2)
 with c1:
-    st.plotly_chart(make_gauge(r1), use_container_width=True)
+        st.plotly_chart(make_gauge(r1), use_container_width=True)
 with c2:
-    st.plotly_chart(make_gauge(r2), use_container_width=True)
+        st.plotly_chart(make_gauge(r2), use_container_width=True)
 
 st.divider()
 st.subheader("Detalle por componente")
 c3, c4 = st.columns(2)
 
 for col, r in zip([c3, c4], [r1, r2]):
-    with col:
-        st.markdown(f"**{r['flag']} {r['name']}**")
-        t1, t2 = st.tabs(["Barras", "Radar"])
-        with t1:
-            st.plotly_chart(make_bars(r), use_container_width=True)
-        with t2:
-            st.plotly_chart(make_radar(r), use_container_width=True)
+        with col:
+                    st.markdown(f"**{r['flag']} {r['name']}**")
+                    t1, t2 = st.tabs(["Barras", "Radar"])
+                    with t1:
+                                    st.plotly_chart(make_bars(r), use_container_width=True)
+                                with t2:
+                        st.plotly_chart(make_radar(r), use_container_width=True)
 
+                                    # ── NUEVA SECCION: Evolucion de cada indicador ────────────────────────────────
+                                    st.divider()
+st.subheader("Evolucion historica de cada indicador")
+st.caption("Ultimos 12 meses aprox. Score normalizado 0-100 (50 = neutral)")
+
+tab_us, tab_eu = st.tabs([f"US {r1['flag']} - {r1['name']}", f"EU {r2['flag']} - {r2['name']}"])
+
+with tab_us:
+        fig_hist1 = make_component_history(r1)
+    if fig_hist1:
+                st.plotly_chart(fig_hist1, use_container_width=True)
+else:
+        st.info("No hay suficientes datos historicos para mostrar la evolucion.")
+
+with tab_eu:
+        fig_hist2 = make_component_history(r2)
+    if fig_hist2:
+                st.plotly_chart(fig_hist2, use_container_width=True)
+else:
+        st.info("No hay suficientes datos historicos para mostrar la evolucion.")
+
+# ── NUEVA SECCION: F&G vs Indices bursatiles ─────────────────────────────────
+st.divider()
+st.subheader("Fear & Greed Index vs Indices bursatiles")
+st.caption("Comparativa entre el indicador de sentimiento y la evolucion del mercado (ultimos 12 meses)")
+
+fig_vs = make_fg_vs_index(r1, r2)
+if fig_vs:
+        st.plotly_chart(fig_vs, use_container_width=True)
+else:
+    st.info("No hay suficientes datos para mostrar la comparativa.")
 
 st.divider()
 st.subheader("Que mide cada componente")
 
 COMPONENT_DESC = {
-    "Momentum":       "Compara el precio actual del indice con su media movil de 125 dias. Si cotiza por encima, hay euforia; si cae por debajo, hay miedo.",
-    "Strength (RSI)": "RSI de 14 dias. Mide si el mercado esta sobrecomprado (codicia) o sobrevendido (miedo).",
-    "Breadth":        "Proporcion de dias alcistas frente a bajistas en los ultimos 20 dias. Mas dias verdes = mayor codicia.",
-    "Junk Bond":      "Diferencial de tipos entre bonos de alto riesgo y bonos seguros (FRED/ICE BofA). Un spread alto indica miedo e incertidumbre.",
-    "Volatility":     "VIX (S&P) o VSTOXX (EuroStoxx). A mayor volatilidad, mayor miedo en el mercado.",
-    "Safe Haven":     "Retorno relativo de acciones frente a bonos del tesoro. Si los inversores huyen a bonos, hay miedo.",
+        "Momentum": "Compara el precio actual del indice con su media movil de 125 dias. Si cotiza por encima, hay euforia; si cae por debajo, hay miedo.",
+        "Strength (RSI)": "RSI de 14 dias. Mide si el mercado esta sobrecomprado (codicia) o sobrevendido (miedo).",
+        "Breadth": "Proporcion de dias alcistas frente a bajistas en los ultimos 20 dias. Mas dias verdes = mayor codicia.",
+        "Junk Bond": "Diferencial de tipos entre bonos de alto riesgo y bonos seguros (FRED/ICE BofA). Un spread alto indica miedo e incertidumbre.",
+        "Volatility": "VIX (S&P) o VSTOXX (EuroStoxx). A mayor volatilidad, mayor miedo en el mercado.",
+        "Safe Haven": "Retorno relativo de acciones frente a bonos del tesoro. Si los inversores huyen a bonos, hay miedo.",
 }
 
 cols_desc = st.columns(3)
 items = list(COMPONENT_DESC.items())
 for i, (name, desc) in enumerate(items):
-    with cols_desc[i % 3]:
-        label, color = get_label(50)  # color neutro para el titulo
+        with cols_desc[i % 3]:
+                    label, color = get_label(50)
         st.markdown(
-            f"**{name}**  \n{desc}",
-            help=desc
+                        f"**{name}** \n{desc}",
+                        help=desc
         )
 
 st.divider()
@@ -255,19 +480,19 @@ st.subheader("Comparativa USA vs Europa")
 
 comp_rows = []
 for k in r1["components"]:
-    s1 = r1["components"][k]
+        s1 = r1["components"][k]
     s2 = r2["components"].get(k, 50.0)
     comp_rows.append({
-        "Componente": k,
-        r1["name"]: s1,
-        r2["name"]: s2,
-        "Diferencia": round(s1 - s2, 1)
+                "Componente": k,
+                r1["name"]: s1,
+                r2["name"]: s2,
+                "Diferencia": round(s1 - s2, 1)
     })
 comp_rows.append({
-    "Componente": "TOTAL",
-    r1["name"]: r1["score"],
-    r2["name"]: r2["score"],
-    "Diferencia": round(r1["score"] - r2["score"], 1)
+        "Componente": "TOTAL",
+        r1["name"]: r1["score"],
+        r2["name"]: r2["score"],
+        "Diferencia": round(r1["score"] - r2["score"], 1)
 })
 
 df_cmp = pd.DataFrame(comp_rows)
