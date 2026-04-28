@@ -168,7 +168,7 @@ def make_radar(result):
     color = result["color"]
     fig = go.Figure(go.Scatterpolar(
         r=vals_c, theta=cats_c, fill="toself",
-        fillcolor=color + "33",
+        fillcolor="rgba(100,100,100,0.15)",
         line=dict(color=color, width=2)
     ))
     fig.update_layout(
