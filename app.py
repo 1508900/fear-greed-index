@@ -282,61 +282,115 @@ def make_component_history(result):
     fig.update_yaxes(gridcolor="#333")
     return fig
 
-def make_fg_vs_index(r1, r2):
-        """Create chart comparing F&G index history vs S&P 500 and Euro Stoxx."""
-        fg1 = r1.get("fg_history", pd.Series(dtype=float))
-        fg2 = r2.get("fg_history", pd.Series(dtype=float))
-        prices1 = r1.get("prices", pd.Series(dtype=float))
-        prices2 = r2.get("prices", pd.Series(dtype=float))
-    
+def make_fg_vs_index(r1, r2, period_days=365):
+    """Gráfico dual-eje: Fear & Greed (izq) vs precio del índice (der)."""
+    fg1 = r1.get("fg_history", pd.Series(dtype=float))
+    fg2 = r2.get("fg_history", pd.Series(dtype=float))
+    p1  = r1.get("prices", pd.Series(dtype=float))
+    p2  = r2.get("prices", pd.Series(dtype=float))
+
     if len(fg1) == 0 and len(fg2) == 0:
-                return None
-        
+        return None
+
+    def trim(s, days):
+        if len(s) == 0:
+            return s
+        cutoff = s.index[-1] - pd.Timedelta(days=days)
+        return s[s.index >= cutoff]
+
+    fg1 = trim(fg1, period_days)
+    fg2 = trim(fg2, period_days)
+    p1  = trim(p1,  period_days)
+    p2  = trim(p2,  period_days)
+
     fig = make_subplots(
-                rows=2, cols=1,
-                shared_xaxes=True,
-                subplot_titles=[
-                                "Fear & Greed Index - Evolucion historica",
-                                "Indices bursatiles - Precio normalizado (base 100)"
-                ],
-                vertical_spacing=0.1,
-                row_heights=[0.5, 0.5]
+        rows=2, cols=1,
+        shared_xaxes=False,
+        vertical_spacing=0.10,
+        subplot_titles=[
+            f"{r1.get('flag','')} {r1.get('name','US')} — Fear & Greed vs Precio",
+            f"{r2.get('flag','')} {r2.get('name','EU')} — Fear & Greed vs Precio",
+        ],
+        specs=[[{"secondary_y": True}], [{"secondary_y": True}]],
     )
 
-    # --- Top panel: F&G history ---
-    if len(fg1) > 0:
-                fig.add_trace(go.Scatter(
-                                x=fg1.index, y=fg1.values,
-                                mode="lines", name=f"F&G US (S&P 500)",
-                                line=dict(color="#4fc3f7", width=2),
-                                hovertemplate="%{x|%d/%m/%Y}<br>F&G US: %{y:.0f}<extra></extra>"
-                ), row=1, col=1)
-        
-    if len(fg2) > 0:
-                fig.add_trace(go.Scatter(
-                                x=fg2.index, y=fg2.values,
-                                mode="lines", name=f"F&G EU (EuroStoxx)",
-                                line=dict(color="#ffb74d", width=2),
-                                hovertemplate="%{x|%d/%m/%Y}<br>F&G EU: %{y:.0f}<extra></extra>"
-                ), row=1, col=1)
-        
-    # Add colored zones on top panel
-    fig.add_hrect(y0=0, y1=25, fillcolor="#c62828", opacity=0.08, line_width=0, row=1, col=1)
-    fig.add_hrect(y0=25, y1=45, fillcolor="#ef6c00", opacity=0.08, line_width=0, row=1, col=1)
-    fig.add_hrect(y0=45, y1=55, fillcolor="#f9a825", opacity=0.08, line_width=0, row=1, col=1)
-    fig.add_hrect(y0=55, y1=75, fillcolor="#558b2f", opacity=0.08, line_width=0, row=1, col=1)
-    fig.add_hrect(y0=75, y1=100, fillcolor="#1b5e20", opacity=0.08, line_width=0, row=1, col=1)
-    fig.add_hline(y=50, line_dash="dash", line_color="#666", line_width=1, row=1, col=1)
+    FG_US   = "#0085CA"
+    FG_EU   = "#37BBF4"
+    PR_CLR  = "#C8DAE2"
+    FEAR_Z  = "rgba(235,86,86,0.12)"
+    GREED_Z = "rgba(54,123,53,0.12)"
 
-    # --- Bottom panel: index prices normalized to 100 ---
-    # Align to common start date
-    common_start = None
-    if len(prices1) > 0 and len(prices2) > 0:
-                p1 = prices1.iloc[-252:] if len(prices1) > 252 else prices1
-                p2 = prices2.iloc[-252:] if len(prices2) > 252 else prices2
-                common_start = max(p1.index[0], p2.index[0])
-                p1 = p1[p1.index >= common_start]
-                p2 = p2[p2.index >= common_start]
+    def add_panel(row, fg, price, fg_color):
+        if len(fg) == 0:
+            return
+        fig.add_trace(go.Scatter(
+            x=fg.index, y=[40]*len(fg), fill=None,
+            mode="lines", line=dict(width=0), showlegend=False, hoverinfo="skip"
+        ), row=row, col=1, secondary_y=False)
+        fig.add_trace(go.Scatter(
+            x=fg.index, y=[0]*len(fg), fill="tonexty",
+            mode="lines", line=dict(width=0), fillcolor=FEAR_Z,
+            showlegend=False, hoverinfo="skip"
+        ), row=row, col=1, secondary_y=False)
+        fig.add_trace(go.Scatter(
+            x=fg.index, y=[60]*len(fg), fill=None,
+            mode="lines", line=dict(width=0), showlegend=False, hoverinfo="skip"
+        ), row=row, col=1, secondary_y=False)
+        fig.add_trace(go.Scatter(
+            x=fg.index, y=[100]*len(fg), fill="tonexty",
+            mode="lines", line=dict(width=0), fillcolor=GREED_Z,
+            showlegend=False, hoverinfo="skip"
+        ), row=row, col=1, secondary_y=False)
+        fig.add_trace(go.Scatter(
+            x=fg.index, y=fg.values,
+            mode="lines", name="Fear & Greed",
+            line=dict(color=fg_color, width=2.5),
+            hovertemplate="%{x|%d %b %Y}<br><b>F&G: %{y:.0f}</b><extra></extra>",
+        ), row=row, col=1, secondary_y=False)
+        if len(price) > 0:
+            common = fg.index.intersection(price.index)
+            if len(common) > 0:
+                pr = price.reindex(common)
+                fig.add_trace(go.Scatter(
+                    x=pr.index, y=pr.values,
+                    mode="lines", name="Precio índice",
+                    line=dict(color=PR_CLR, width=1.8, dash="dot"),
+                    opacity=0.85,
+                    hovertemplate="%{x|%d %b %Y}<br><b>Precio: %{y:,.0f}</b><extra></extra>",
+                ), row=row, col=1, secondary_y=True)
+
+    add_panel(1, fg1, p1, FG_US)
+    add_panel(2, fg2, p2, FG_EU)
+
+    for row in [1, 2]:
+        for val in [25, 50, 75]:
+            fig.add_hline(y=val, line_dash="dot",
+                          line_color="rgba(200,218,226,0.3)", line_width=1,
+                          row=row, col=1)
+
+    fig.update_layout(
+        height=700,
+        plot_bgcolor="#0A3A50",
+        paper_bgcolor="#062D3F",
+        font=dict(color="#F3F3F3", size=12),
+        showlegend=False,
+        hovermode="x unified",
+        margin=dict(l=10, r=10, t=50, b=10),
+    )
+    for row in [1, 2]:
+        fg_c = FG_US if row == 1 else FG_EU
+        fig.update_yaxes(range=[0, 100], title_text="Fear & Greed",
+                         gridcolor="rgba(200,218,226,0.1)", zeroline=False,
+                         tickfont=dict(color=fg_c), title_font=dict(color=fg_c),
+                         secondary_y=False, row=row, col=1)
+        fig.update_yaxes(title_text="Precio",
+                         gridcolor="rgba(0,0,0,0)", zeroline=False,
+                         tickfont=dict(color=PR_CLR), title_font=dict(color=PR_CLR),
+                         secondary_y=True, row=row, col=1)
+        fig.update_xaxes(gridcolor="rgba(200,218,226,0.08)", zeroline=False,
+                         tickfont=dict(color="#C8DAE2"), row=row, col=1)
+    return fig
+
 elif len(prices1) > 0:
             p1 = prices1.iloc[-252:] if len(prices1) > 252 else prices1
             p2 = pd.Series(dtype=float)
@@ -445,14 +499,18 @@ with tab_us:
                 
         # ── NUEVA SECCION: F&G vs Indices bursatiles ─────────────────────────────────
 st.divider()
-st.subheader("Fear & Greed Index vs Indices bursatiles")
-st.caption("Panel superior: F&G historico (ultimos 12 meses). Panel inferior: precio del indice normalizado a 100.")
+st.subheader("Fear & Greed Index vs Índices bursátiles")
+st.caption("Doble eje: Fear & Greed (izquierda, línea sólida) · Precio del índice (derecha, línea punteada).")
 
-fig_vs = make_fg_vs_index(r1, r2)
+_opts = {"6 meses": 180, "1 año": 365, "2 años": 730}
+_sel  = st.radio("Período:", options=list(_opts.keys()), index=1,
+                  horizontal=True, label_visibility="collapsed")
+
+fig_vs = make_fg_vs_index(r1, r2, period_days=_opts[_sel])
 if fig_vs:
-        st.plotly_chart(fig_vs, use_container_width=True)
+    st.plotly_chart(fig_vs, use_container_width=True)
 else:
-        st.info("No hay suficientes datos para mostrar la comparativa.")
+    st.info("No hay suficientes datos para mostrar la evolución histórica.")
     
 st.divider()
 st.subheader("Que mide cada componente")
@@ -781,106 +839,18 @@ def make_component_history(result):
     fig.update_yaxes(gridcolor="#333")
     return fig
 
-def make_fg_vs_index(r1, r2):
-        """Create chart comparing F&G index history vs S&P 500 and Euro Stoxx."""
-    fg1 = r1.get("fg_history", pd.Series(dtype=float))
-    fg2 = r2.get("fg_history", pd.Series(dtype=float))
-    prices1 = r1.get("prices", pd.Series(dtype=float))
-    prices2 = r2.get("prices", pd.Series(dtype=float))
+st.subheader("Fear & Greed Index vs Índices bursátiles")
+st.caption("Doble eje: Fear & Greed (izquierda, línea sólida) · Precio del índice (derecha, línea punteada). Sin descargas adicionales — usa los datos ya cargados.")
 
-    if len(fg1) == 0 and len(fg2) == 0:
-                return None
+_opts = {"6 meses": 180, "1 año": 365, "2 años": 730}
+_sel  = st.radio("Período:", options=list(_opts.keys()), index=1,
+                  horizontal=True, label_visibility="collapsed")
 
-    fig = make_subplots(
-                rows=2, cols=1,
-                shared_xaxes=True,
-                subplot_titles=[
-                                "Fear & Greed Index - Evolucion historica",
-                                "Indices bursatiles - Precio normalizado (base 100)"
-                ],
-                vertical_spacing=0.08,
-                specs=[[{"secondary_y": False}], [{"secondary_y": False}]]
-    )
-
-    # --- Top panel: F&G history ---
-    if len(fg1) > 0:
-                fg1_plot = fg1.iloc[-252:] if len(fg1) > 252 else fg1
-                fig.add_trace(go.Scatter(
-                    x=fg1_plot.index, y=fg1_plot.values,
-                    mode="lines", name=f"F&G {r1['flag']} (S&P 500)",
-                    line=dict(color="#4fc3f7", width=2),
-                    hovertemplate="%{x|%d/%m/%Y}<br>F&G US: %{y:.0f}<extra></extra>"
-                ), row=1, col=1)
-
-    if len(fg2) > 0:
-                fg2_plot = fg2.iloc[-252:] if len(fg2) > 252 else fg2
-                fig.add_trace(go.Scatter(
-                    x=fg2_plot.index, y=fg2_plot.values,
-                    mode="lines", name=f"F&G {r2['flag']} (EuroStoxx)",
-                    line=dict(color="#ffb74d", width=2),
-                    hovertemplate="%{x|%d/%m/%Y}<br>F&G EU: %{y:.0f}<extra></extra>"
-                ), row=1, col=1)
-
-    # Add zones on top panel
-    fig.add_hrect(y0=0, y1=25, fillcolor="#c62828", opacity=0.08, line_width=0, row=1, col=1)
-    fig.add_hrect(y0=25, y1=45, fillcolor="#ef6c00", opacity=0.08, line_width=0, row=1, col=1)
-    fig.add_hrect(y0=45, y1=55, fillcolor="#f9a825", opacity=0.08, line_width=0, row=1, col=1)
-    fig.add_hrect(y0=55, y1=75, fillcolor="#558b2f", opacity=0.08, line_width=0, row=1, col=1)
-    fig.add_hrect(y0=75, y1=100, fillcolor="#1b5e20", opacity=0.08, line_width=0, row=1, col=1)
-    fig.add_hline(y=50, line_dash="dash", line_color="#555", line_width=1, row=1, col=1)
-
-    # --- Bottom panel: index prices normalized to 100 ---
-    if len(prices1) > 0:
-                p1 = prices1.iloc[-252:] if len(prices1) > 252 else prices1
-                p1_norm = (p1 / p1.iloc[0] * 100).round(2)
-                fig.add_trace(go.Scatter(
-                    x=p1_norm.index, y=p1_norm.values,
-                    mode="lines", name="S&P 500",
-                    line=dict(color="#4fc3f7", width=2, dash="solid"),
-                    hovertemplate="%{x|%d/%m/%Y}<br>S&P 500: %{y:.1f}<extra></extra>"
-                ), row=2, col=1)
-
-    if len(prices2) > 0:
-                p2 = prices2.iloc[-252:] if len(prices2) > 252 else prices2
-                # Align to same start date as p1 if possible
-                if len(prices1) > 0:
-                                start_date = max(p1_norm.index[0], p2.index[0])
-                                p2 = p2[p2.index >= start_date]
-                                if len(p2) > 0:
-                                                    p2_norm = (p2 / p2.iloc[0] * 100).round(2)
-                                                    fig.add_trace(go.Scatter(
-                                                        x=p2_norm.index, y=p2_norm.values,
-                                                        mode="lines", name="EuroStoxx 50",
-                                                        line=dict(color="#ffb74d", width=2, dash="solid"),
-                                                        hovertemplate="%{x|%d/%m/%Y}<br>EuroStoxx 50: %{y:.1f}<extra></extra>"
-                                                    ), row=2, col=1)
-                else:
-            p2_norm = (p2 / p2.iloc[0] * 100).round(2)
-                                fig.add_trace(go.Scatter(
-                                                    x=p2_norm.index, y=p2_norm.values,
-                                                    mode="lines", name="EuroStoxx 50",
-                                                    line=dict(color="#ffb74d", width=2, dash="solid"),
-                                                    hovertemplate="%{x|%d/%m/%Y}<br>EuroStoxx 50: %{y:.1f}<extra></extra>"
-                                ), row=2, col=1)
-
-    fig.add_hline(y=100, line_dash="dash", line_color="#555", line_width=1, row=2, col=1)
-
-    fig.update_layout(
-                height=500,
-                margin=dict(l=10, r=10, t=50, b=10),
-                paper_bgcolor="#0e1117",
-                plot_bgcolor="#1e2130",
-                font_color="white",
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                hovermode="x unified"
-    )
-    fig.update_yaxes(range=[0, 100], row=1, col=1, gridcolor="#333", title_text="F&G Score")
-    fig.update_yaxes(gridcolor="#333", row=2, col=1, title_text="Precio (base 100)")
-    fig.update_xaxes(showgrid=False, gridcolor="#333")
-    return fig
-
-# ── UI ────────────────────────────────────────────────────────────────────────
-st.title("Fear & Greed Index")
+fig_vs = make_fg_vs_index(r1, r2, period_days=_opts[_sel])
+if fig_vs:
+    st.plotly_chart(fig_vs, use_container_width=True)
+else:
+    st.info("No hay suficientes datos para mostrar la evolución histórica.")st.title("Fear & Greed Index")
 st.caption("S&P 500 (USA) vs EuroStoxx 50 (Europa) - Inspirado en CNN Money")
 
 col_btn, col_ts = st.columns([1, 3])
