@@ -227,6 +227,29 @@ for col, r in zip([c3, c4], [r1, r2]):
         with t2:
             st.plotly_chart(make_radar(r), use_container_width=True)
 
+
+st.divider()
+st.subheader("Que mide cada componente")
+
+COMPONENT_DESC = {
+    "Momentum":       "Compara el precio actual del indice con su media movil de 125 dias. Si cotiza por encima, hay euforia; si cae por debajo, hay miedo.",
+    "Strength (RSI)": "RSI de 14 dias. Mide si el mercado esta sobrecomprado (codicia) o sobrevendido (miedo).",
+    "Breadth":        "Proporcion de dias alcistas frente a bajistas en los ultimos 20 dias. Mas dias verdes = mayor codicia.",
+    "Junk Bond":      "Diferencial de tipos entre bonos de alto riesgo y bonos seguros (FRED/ICE BofA). Un spread alto indica miedo e incertidumbre.",
+    "Volatility":     "VIX (S&P) o VSTOXX (EuroStoxx). A mayor volatilidad, mayor miedo en el mercado.",
+    "Safe Haven":     "Retorno relativo de acciones frente a bonos del tesoro. Si los inversores huyen a bonos, hay miedo.",
+}
+
+cols_desc = st.columns(3)
+items = list(COMPONENT_DESC.items())
+for i, (name, desc) in enumerate(items):
+    with cols_desc[i % 3]:
+        label, color = get_label(50)  # color neutro para el titulo
+        st.markdown(
+            f"**{name}**  \n{desc}",
+            help=desc
+        )
+
 st.divider()
 st.subheader("Comparativa USA vs Europa")
 
