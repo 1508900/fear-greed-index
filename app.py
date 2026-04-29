@@ -86,8 +86,8 @@ def get_fred(series_id):
         df["value"] = pd.to_numeric(df["value"], errors="coerce")
         df.index = pd.to_datetime(df["date"])
         return df["value"].dropna()
-except Exception:
-    return pd.Series(dtype=float)
+    except Exception:
+        return pd.Series(dtype=float)
 
 def compute(cfg):
         lb = cfg["lookback"]
@@ -587,81 +587,84 @@ st.markdown("""
         """, unsafe_allow_html=True)
 
 def get_label(score):
-        if score <= 25: return ("Extreme Fear", "#c62828")
-elif score <= 45: return ("Fear", "#ef6c00")
-elif score <= 55: return ("Neutral", "#f9a825")
-elif score <= 75: return ("Greed", "#558b2f")
-else: return ("Extreme Greed", "#1b5e20")
+    if score <= 25:
+        return ("Extreme Fear", "#c62828")
+    elif score <= 45:
+        return ("Fear", "#ef6c00")
+    elif score <= 55:
+        return ("Neutral", "#f9a825")
+    elif score <= 75:
+        return ("Greed", "#558b2f")
+    else:
+        return ("Extreme Greed", "#1b5e20")
 
 def normalize(series, lookback, invert=False):
-        clean = series.dropna()
-        if len(clean) < 20:
-                    return 50.0
-                window = clean.iloc[-lookback:]
+    clean = series.dropna()
+    if len(clean) < 20:
+        return 50.0
+    window = clean.iloc[-lookback:]
     current = float(clean.iloc[-1])
     score = float((window < current).sum() / len(window) * 100)
     result = 100.0 - score if invert else score
     return round(max(0.0, min(100.0, result)), 1)
 
 def normalize_series(series, lookback, invert=False):
-        """Compute rolling normalized score for each point in the series."""
+    """Compute rolling normalized score for each point in the series."""
     clean = series.dropna()
     if len(clean) < 20:
-                return pd.Series(dtype=float)
-            result = []
+        return pd.Series(dtype=float)
+        result = []
     dates = []
     for i in range(lookback, len(clean)):
-                window = clean.iloc[i-lookback:i]
-                current = float(clean.iloc[i])
-                score = float((window < current).sum() / len(window) * 100)
-                val = 100.0 - score if invert else score
-                result.append(round(max(0.0, min(100.0, val)), 1))
-                dates.append(clean.index[i])
-            return pd.Series(result, index=dates)
+        window = clean.iloc[i-lookback:i]
+        current = float(clean.iloc[i])
+        score = float((window < current).sum() / len(window) * 100)
+        val = 100.0 - score if invert else score
+        result.append(round(max(0.0, min(100.0, val)), 1))
+        dates.append(clean.index[i])
+        return pd.Series(result, index=dates)
 
 @st.cache_data(ttl=600, show_spinner=False)
 def get_yf(ticker):
-        try:
-                    data = yf.download(ticker, period="2y", progress=False, auto_adjust=True)
-                    col = "Close"
-                    if col not in data.columns:
-                                    col = data.columns[0]
-                                s = data[col].dropna()
+    try:
+        data = yf.download(ticker, period="2y", progress=False, auto_adjust=True)
+        col = "Close"
+        if col not in data.columns:
+            col = data.columns[0]
+        s = data[col].dropna()
         if isinstance(s, pd.DataFrame):
-                        s = s.iloc[:, 0]
-                    return s
-except Exception:
+            s = s.iloc[:, 0]
+        return s
+    except Exception:
         return pd.Series(dtype=float)
-
-@st.cache_data(ttl=600, show_spinner=False)
 def get_fred(series_id):
-        try:
-                    start = (pd.Timestamp.today() - pd.DateOffset(years=3)).date()
-        url = (f"https://api.stlouisfed.org/fred/series/observations"
-                              f"?series_id={series_id}&api_key={FRED_API_KEY}"
-                              f"&file_type=json&observation_start={start}")
-        r = requests.get(url, timeout=15)
-        r.raise_for_status()
-        obs = r.json().get("observations", [])
-        df = pd.DataFrame(obs)
-        df["value"] = pd.to_numeric(df["value"], errors="coerce")
-        df.index = pd.to_datetime(df["date"])
-        return df["value"].dropna()
+    try:
+        start = (pd.Timestamp.today() - pd.DateOffset(years=3)).date()
+    url = (f"https://api.stlouisfed.org/fred/series/observations"
+            f"?series_id={series_id}&api_key={FRED_API_KEY}"
+            f"&file_type=json&observation_start={start}")
+    r = requests.get(url, timeout=15)
+    r.raise_for_status()
+    obs = r.json().get("observations", [])
+    df = pd.DataFrame(obs)
+    df["value"] = pd.to_numeric(df["value"], errors="coerce")
+    df.index = pd.to_datetime(df["date"])
+    return df["value"].dropna()
 except Exception:
-        return pd.Series(dtype=float)
+    return pd.Series(dtype=float)
 
 def compute(cfg):
-        lb = cfg["lookback"]
+    lb = cfg["lookback"]
     prices = get_yf(cfg["index"])
     vix = get_yf(cfg["volatility"])
     bond = get_yf(cfg["bond_yield"])
     hy = get_fred(cfg["hy_spread"])
 
     if len(prices) < 30:
-                dummy = {k: 50.0 for k in ["Momentum","Strength (RSI)","Breadth","Junk Bond","Volatility","Safe Haven"]}
-        return {"score": 50.0, "label": "Neutral", "color": "#f9a825",
-                                "components": dummy, "name": cfg["name"], "flag": cfg["flag"],
-                                "series": {}, "prices": prices}
+        dummy = {k: 50.0 for k in ["Momentum","Strength (RSI)","Breadth","Junk Bond","Volatility","Safe Haven"]}
+    return {"score": 50.0, "label": "Neutral", "color": "#f9a825",
+            "components": dummy, "name": cfg["name"], "flag": cfg["flag"],
+            "series": {}, "prices": prices}
 
     ma = prices.rolling(cfg["ma_period"]).mean()
     momentum = (prices / ma - 1) * 100
@@ -677,44 +680,44 @@ def compute(cfg):
 
     eq_ret = prices.pct_change(20) * 100
     if len(bond) > 20:
-                bd_chg = bond.reindex(eq_ret.index, method="ffill").diff(20)
-                safehav = eq_ret - bd_chg
+        bd_chg = bond.reindex(eq_ret.index, method="ffill").diff(20)
+        safehav = eq_ret - bd_chg
 else:
-        safehav = eq_ret
+    safehav = eq_ret
 
     components = {
-                "Momentum": normalize(momentum, lb),
-                "Strength (RSI)": normalize(rsi, lb),
-                "Breadth": normalize(breadth, lb),
-                "Junk Bond": normalize(hy, lb, invert=True) if len(hy) > 0 else 50.0,
-                "Volatility": normalize(vix, lb, invert=True) if len(vix) > 0 else 50.0,
-                "Safe Haven": normalize(safehav, lb),
+        "Momentum": normalize(momentum, lb),
+        "Strength (RSI)": normalize(rsi, lb),
+        "Breadth": normalize(breadth, lb),
+        "Junk Bond": normalize(hy, lb, invert=True) if len(hy) > 0 else 50.0,
+        "Volatility": normalize(vix, lb, invert=True) if len(vix) > 0 else 50.0,
+        "Safe Haven": normalize(safehav, lb),
     }
 
     # Compute historical series for each component (last 252 trading days)
     hist_lb = min(lb, 252)
     series = {
-                "Momentum": normalize_series(momentum, hist_lb),
-                "Strength (RSI)": normalize_series(rsi, hist_lb),
-                "Breadth": normalize_series(breadth, hist_lb),
-                "Junk Bond": normalize_series(hy.reindex(momentum.index, method="ffill").dropna(), hist_lb, invert=True) if len(hy) > 20 else pd.Series(dtype=float),
-                "Volatility": normalize_series(vix.reindex(momentum.index, method="ffill").dropna(), hist_lb, invert=True) if len(vix) > 20 else pd.Series(dtype=float),
-                "Safe Haven": normalize_series(safehav, hist_lb),
+        "Momentum": normalize_series(momentum, hist_lb),
+        "Strength (RSI)": normalize_series(rsi, hist_lb),
+        "Breadth": normalize_series(breadth, hist_lb),
+        "Junk Bond": normalize_series(hy.reindex(momentum.index, method="ffill").dropna(), hist_lb, invert=True) if len(hy) > 20 else pd.Series(dtype=float),
+        "Volatility": normalize_series(vix.reindex(momentum.index, method="ffill").dropna(), hist_lb, invert=True) if len(vix) > 20 else pd.Series(dtype=float),
+        "Safe Haven": normalize_series(safehav, hist_lb),
     }
 
     # Compute rolling Fear & Greed Index (average of all 6 components)
     valid_series = [s for s in series.values() if len(s) > 0]
     if valid_series:
-                combined = pd.concat(valid_series, axis=1).dropna()
-                fg_history = combined.mean(axis=1).round(1)
+        combined = pd.concat(valid_series, axis=1).dropna()
+        fg_history = combined.mean(axis=1).round(1)
 else:
-        fg_history = pd.Series(dtype=float)
+    fg_history = pd.Series(dtype=float)
 
     total = round(sum(components.values()) / len(components), 1)
     lbl, color = get_label(total)
     return {"score": total, "label": lbl, "color": color,
-                        "components": components, "name": cfg["name"], "flag": cfg["flag"],
-                        "series": series, "fg_history": fg_history, "prices": prices}
+            "components": components, "name": cfg["name"], "flag": cfg["flag"],
+            "series": series, "fg_history": fg_history, "prices": prices}
 
 def make_gauge(result):
         score = result["score"]
