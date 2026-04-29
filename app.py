@@ -34,60 +34,60 @@ def get_label(score):
         return ("Extreme Greed", "#1b5e20")
 
 def normalize(series, lookback, invert=False):
-        clean = series.dropna()
-        if len(clean) < 20:
-                    return 50.0
-                window = clean.iloc[-lookback:]
+    clean = series.dropna()
+    if len(clean) < 20:
+        return 50.0
+    window = clean.iloc[-lookback:]
     current = float(clean.iloc[-1])
     score = float((window < current).sum() / len(window) * 100)
     result = 100.0 - score if invert else score
     return round(max(0.0, min(100.0, result)), 1)
 
 def normalize_rolling(series, lookback, invert=False):
-        """Vectorized rolling percentile rank (0-100 scale)."""
+    """Vectorized rolling percentile rank (0-100 scale)."""
     clean = series.dropna()
     if len(clean) < lookback + 5:
-                return pd.Series(dtype=float)
-            # Use rolling rank: for each point i, compute percentile vs previous `lookback` points
+        return pd.Series(dtype=float)
+    # Use rolling rank: for each point i, compute percentile vs previous `lookback` points
     def pct_rank(x):
-                return float((x[:-1] < x[-1]).sum() / (len(x) - 1) * 100)
-            rolled = clean.rolling(window=lookback + 1).apply(pct_rank, raw=True)
+        return float((x[:-1] < x[-1]).sum() / (len(x) - 1) * 100)
+    rolled = clean.rolling(window=lookback + 1).apply(pct_rank, raw=True)
     rolled = rolled.dropna()
     if invert:
-                rolled = 100.0 - rolled
-            rolled = rolled.clip(0, 100).round(1)
+        rolled = 100.0 - rolled
+    rolled = rolled.clip(0, 100).round(1)
     return rolled
 
 @st.cache_data(ttl=600, show_spinner=False)
 def get_yf(ticker):
-        try:
-                    data = yf.download(ticker, period="2y", progress=False, auto_adjust=True)
-                    col = "Close"
-                    if col not in data.columns:
-                                    col = data.columns[0]
-                                s = data[col].dropna()
-                    if isinstance(s, pd.DataFrame):
-                                    s = s.iloc[:, 0]
-                                return s
-except Exception:
+    try:
+        data = yf.download(ticker, period="2y", progress=False, auto_adjust=True)
+        col = "Close"
+        if col not in data.columns:
+            col = data.columns[0]
+        s = data[col].dropna()
+        if isinstance(s, pd.DataFrame):
+            s = s.iloc[:, 0]
+        return s
+    except Exception:
         return pd.Series(dtype=float)
 
 @st.cache_data(ttl=600, show_spinner=False)
 def get_fred(series_id):
-        try:
-                    start = (pd.Timestamp.today() - pd.DateOffset(years=3)).date()
-                    url = (f"https://api.stlouisfed.org/fred/series/observations"
-                                          f"?series_id={series_id}&api_key={FRED_API_KEY}"
-                                          f"&file_type=json&observation_start={start}")
-                    r = requests.get(url, timeout=15)
-                    r.raise_for_status()
-                    obs = r.json().get("observations", [])
-                    df = pd.DataFrame(obs)
-                    df["value"] = pd.to_numeric(df["value"], errors="coerce")
-                    df.index = pd.to_datetime(df["date"])
-                    return df["value"].dropna()
+    try:
+        start = (pd.Timestamp.today() - pd.DateOffset(years=3)).date()
+        url = (f"https://api.stlouisfed.org/fred/series/observations"
+            f"?series_id={series_id}&api_key={FRED_API_KEY}"
+            f"&file_type=json&observation_start={start}")
+        r = requests.get(url, timeout=15)
+        r.raise_for_status()
+        obs = r.json().get("observations", [])
+        df = pd.DataFrame(obs)
+        df["value"] = pd.to_numeric(df["value"], errors="coerce")
+        df.index = pd.to_datetime(df["date"])
+        return df["value"].dropna()
 except Exception:
-        return pd.Series(dtype=float)
+    return pd.Series(dtype=float)
 
 def compute(cfg):
         lb = cfg["lookback"]
