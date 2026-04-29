@@ -22,11 +22,16 @@ st.markdown("""
         """, unsafe_allow_html=True)
 
 def get_label(score):
-        if score <= 25: return ("Extreme Fear", "#c62828")
-elif score <= 45: return ("Fear", "#ef6c00")
-elif score <= 55: return ("Neutral", "#f9a825")
-elif score <= 75: return ("Greed", "#558b2f")
-else: return ("Extreme Greed", "#1b5e20")
+    if score <= 25:
+        return ("Extreme Fear", "#c62828")
+    elif score <= 45:
+        return ("Fear", "#ef6c00")
+    elif score <= 55:
+        return ("Neutral", "#f9a825")
+    elif score <= 75:
+        return ("Greed", "#558b2f")
+    else:
+        return ("Extreme Greed", "#1b5e20")
 
 def normalize(series, lookback, invert=False):
         clean = series.dropna()
